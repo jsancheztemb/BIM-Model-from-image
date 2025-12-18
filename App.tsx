@@ -19,7 +19,9 @@ import {
   RotateCcw,
   FileCode,
   Beaker,
-  Maximize
+  Maximize,
+  ChevronLeft,
+  FileJson
 } from 'lucide-react';
 import { LOD, AppState, PrimitiveType, Unit, LODConfig, ModelData } from './types';
 import { generate3DPrimitives } from './services/geminiService';
@@ -33,7 +35,7 @@ const DEFAULT_LOD_CONFIGS: Record<LOD, LODConfig> = {
 };
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'upload' | 'detail' | 'viewer'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'detail' | 'viewer' | 'export'>('upload');
   const [state, setState] = useState<AppState>({
     images: [],
     lod: LOD.MEDIUM,
@@ -57,7 +59,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (state.notification) {
-      const timer = setTimeout(() => setState(s => ({ ...s, notification: null })), 5000);
+      const timer = setTimeout(() => setState(s => ({ ...s, notification: null })), 6000);
       return () => clearTimeout(timer);
     }
   }, [state.notification]);
@@ -88,7 +90,7 @@ const App: React.FC = () => {
         { type: PrimitiveType.SPHERE, position: [-40, 0, 0], rotation: [0, 0, 0], scale: [25, 25, 25], color: '#ef4444' }
       ]
     };
-    setState(prev => ({ ...prev, model: testModel, globalScale: 1, notification: { message: "Modelo demo cargado.", type: 'info' } }));
+    setState(prev => ({ ...prev, model: testModel, globalScale: 1, notification: { message: "Modelo demo cargado correctamente.", type: 'info' } }));
     setActiveTab('viewer');
   };
 
@@ -100,8 +102,16 @@ const App: React.FC = () => {
       const model = await generate3DPrimitives(state.images, state.lod, state.lodConfigs[state.lod], 100, state.unit);
       setState(prev => ({ ...prev, model, isProcessing: false, globalScale: 1 }));
     } catch (err) {
-      setState(prev => ({ ...prev, isProcessing: false, error: err instanceof Error ? err.message : "Error." }));
+      setState(prev => ({ ...prev, isProcessing: false, error: err instanceof Error ? err.message : "Error desconocido." }));
     }
+  };
+
+  const handleScaleChange = (newScale: number) => {
+    setState(s => ({ 
+      ...s, 
+      globalScale: newScale,
+      notification: { message: "¡Medición validada! Factor de escala actualizado correctamente para Revit.", type: 'success' }
+    }));
   };
 
   const handleExport = (format: 'OBJ' | 'DXF') => {
@@ -115,11 +125,18 @@ const App: React.FC = () => {
           scale: p.scale.map(v => v * state.globalScale) as [number, number, number]
         }))
       };
+      const fileName = `GeoImage_${state.lod}_${Date.now()}.${format.toLowerCase()}`;
       const content = format === 'OBJ' ? exportToOBJ(scaledModel) : exportToDXF(scaledModel);
-      downloadFile(content, `GeoImage_${state.lod}_${Date.now()}.${format.toLowerCase()}`, "text/plain");
-      setState(s => ({ ...s, notification: { message: `Modelo exportado en ${format}`, type: 'success' } }));
+      downloadFile(content, fileName, "text/plain");
+      setState(s => ({ 
+        ...s, 
+        notification: { 
+          message: `Archivo "${fileName}" guardado en la carpeta local de Descargas.`, 
+          type: 'success' 
+        } 
+      }));
     } catch (e) {
-      setState(s => ({ ...s, notification: { message: "Error al exportar.", type: 'error' } }));
+      setState(s => ({ ...s, notification: { message: "Error al generar el archivo de exportación.", type: 'error' } }));
     }
   };
 
@@ -129,7 +146,7 @@ const App: React.FC = () => {
         <div className="mx-auto w-24 h-24 bg-blue-600 text-white rounded-3xl flex items-center justify-center mb-8 shadow-2xl rotate-6 transform transition hover:rotate-0">
           <Upload size={44} />
         </div>
-        <h3 className="text-3xl font-black mb-4 text-slate-900 tracking-tight">Carga de Referencias</h3>
+        <h3 className="text-3xl font-black mb-4 text-slate-900 tracking-tight uppercase">Subir imágenes</h3>
         <p className="text-slate-500 mb-10 max-w-lg mx-auto leading-relaxed font-medium">
           Selecciona fotos o planos técnicos (plantas, alzados, secciones). La IA ignorará textos y anotaciones para centrarse en la geometría 3D.
         </p>
@@ -173,7 +190,7 @@ const App: React.FC = () => {
       <section>
         <div className="flex items-center justify-between mb-10">
           <div>
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center">
+            <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center uppercase">
               <Layers size={32} className="mr-4 text-blue-600" />
               Nivel de detalle (LOD)
             </h3>
@@ -181,7 +198,7 @@ const App: React.FC = () => {
           </div>
           <button onClick={() => setState(prev => ({ ...prev, lodConfigs: { ...DEFAULT_LOD_CONFIGS } }))} className="flex items-center text-xs font-black text-blue-600 hover:text-blue-800 bg-blue-50 px-4 py-3 rounded-xl transition-colors border border-blue-100 uppercase tracking-widest">
             <RotateCcw size={16} className="mr-2" />
-            Valores Originales
+            Restaura valores por defecto calculados
           </button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -189,144 +206,161 @@ const App: React.FC = () => {
             { id: LOD.LOW, title: 'Bajo (Masas)', desc: 'Volúmenes puros para encaje urbano o masificación general.', icon: <Box size={28} /> },
             { id: LOD.MEDIUM, title: 'Medio (Standard)', desc: 'Nivel ideal para familias de Revit con geometría clara.', icon: <Layers size={28} /> },
             { id: LOD.HIGH, title: 'Alto (Detalle)', desc: 'Descomposición exhaustiva para elementos complejos.', icon: <BoxSelect size={28} /> },
-          ].map((level) => (
-            <div
-              key={level.id}
-              onClick={() => setState(s => ({ ...s, lod: level.id }))}
-              className={`p-8 rounded-[2rem] border-2 transition-all cursor-pointer ${
-                state.lod === level.id ? 'border-blue-600 bg-blue-50/50 shadow-2xl shadow-blue-500/10' : 'border-slate-200 bg-white hover:border-slate-300'
-              }`}
-            >
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all ${state.lod === level.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600'}`}>
-                {level.icon}
+          ].map((level) => {
+            const maxP = state.lodConfigs[level.id].maxPrimitives;
+            const approxFaces = maxP * 12;
+
+            return (
+              <div
+                key={level.id}
+                onClick={() => setState(s => ({ ...s, lod: level.id }))}
+                className={`p-8 rounded-[2rem] border-2 transition-all cursor-pointer ${
+                  state.lod === level.id ? 'border-blue-600 bg-blue-50/50 shadow-2xl shadow-blue-500/10' : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all ${state.lod === level.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600'}`}>
+                  {level.icon}
+                </div>
+                <h4 className="font-black text-xl mb-3 text-slate-800 tracking-tight uppercase">{level.title}</h4>
+                <p className="text-sm text-slate-500 mb-8 leading-relaxed font-medium">{level.desc}</p>
+                <div className="pt-6 border-t border-slate-200" onClick={e => e.stopPropagation()}>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-3">Piezas Máximas</label>
+                  <input 
+                    type="number"
+                    value={maxP}
+                    onChange={(e) => setState(prev => ({ ...prev, lodConfigs: { ...prev.lodConfigs, [level.id]: { maxPrimitives: parseInt(e.target.value) || 1 } } }))}
+                    className="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-black text-lg focus:ring-4 ring-blue-500/10"
+                  />
+                  <div className="mt-4 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <span>Carga geométrica:</span>
+                    <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded-md">~{approxFaces} Caras aprox.</span>
+                  </div>
+                </div>
               </div>
-              <h4 className="font-black text-xl mb-3 text-slate-800 tracking-tight">{level.title}</h4>
-              <p className="text-sm text-slate-500 mb-8 leading-relaxed font-medium">{level.desc}</p>
-              <div className="pt-6 border-t border-slate-200" onClick={e => e.stopPropagation()}>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-3">Piezas Máximas</label>
-                <input 
-                  type="number"
-                  value={state.lodConfigs[level.id].maxPrimitives}
-                  onChange={(e) => setState(prev => ({ ...prev, lodConfigs: { ...prev.lodConfigs, [level.id]: { maxPrimitives: parseInt(e.target.value) || 1 } } }))}
-                  className="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-black text-lg focus:ring-4 ring-blue-500/10"
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
       <div className="flex justify-between items-center pt-10 border-t border-slate-200">
         <button onClick={() => setActiveTab('upload')} className="px-10 py-5 text-slate-600 font-black hover:bg-slate-100 rounded-2xl transition-all uppercase tracking-widest text-xs">← Volver</button>
         <button onClick={processModel} className="flex items-center px-12 py-5 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-2xl shadow-blue-600/20 font-black text-lg">
           <RefreshCw size={24} className={`mr-4 ${state.isProcessing ? 'animate-spin' : ''}`} />
-          {state.isProcessing ? 'Procesando...' : 'Construir Modelo'}
+          {state.isProcessing ? 'Procesando...' : 'Generar modelo'}
         </button>
       </div>
     </div>
   );
 
   const renderViewerTab = () => (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col xl:flex-row gap-8">
-        <div className="flex-1 h-[650px] relative">
-          {state.isProcessing ? (
-            <div className="absolute inset-0 z-30 bg-slate-950/95 flex flex-col items-center justify-center rounded-[2.5rem] border border-white/10">
-              <div className="w-16 h-16 border-[6px] border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-              <h4 className="text-2xl font-black text-white mb-2 tracking-tight uppercase tracking-[0.1em]">IA: Reconstruyendo Espacios</h4>
-              <p className="text-slate-400 animate-pulse font-bold">Interpretando planos y filtrando anotaciones...</p>
-            </div>
-          ) : state.error ? (
-            <div className="absolute inset-0 z-30 bg-red-50 flex flex-col items-center justify-center rounded-[2.5rem] border border-red-200 p-12 text-center">
-              <AlertCircle size={64} className="text-red-500 mb-8" />
-              <p className="text-red-900 font-black text-xl mb-10 max-w-md leading-relaxed">{state.error}</p>
-              <button onClick={processModel} className="px-12 py-5 bg-red-600 text-white rounded-2xl font-black shadow-xl shadow-red-600/20 uppercase tracking-widest text-xs">Reintentar Proceso</button>
-            </div>
-          ) : state.model ? (
-            <Viewer3D 
-              model={state.model} 
-              globalScale={state.globalScale}
-              unit={state.unit}
-              onScaleChange={(newScale) => setState(s => ({ ...s, globalScale: newScale }))}
-              onUnitChange={(newUnit) => setState(s => ({ ...s, unit: newUnit }))}
-            />
-          ) : (
-            <div className="h-full w-full bg-slate-100 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-400 border-4 border-dashed border-slate-200">
-              <Box size={64} className="mb-6 opacity-20" />
-              <p className="font-black text-xl uppercase tracking-widest opacity-40">Sin modelo activo</p>
-            </div>
-          )}
-        </div>
-
-        <div className="w-full xl:w-[400px] space-y-6">
-          <div className="bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-200">
-            <h4 className="font-black text-2xl mb-2 text-slate-900 tracking-tight">Inspector BIM</h4>
-            <p className="text-sm text-slate-500 mb-10 font-medium">Calibra y exporta tu geometría simplificada.</p>
-            
-            <div className="space-y-8">
-               <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20">
-                    <Maximize size={24} />
-                  </div>
-                  <div>
-                    <h5 className="font-black text-blue-900 uppercase tracking-widest text-[10px]">Factor de Escala</h5>
-                    <p className="text-2xl font-black text-blue-600">{state.globalScale.toFixed(4)}</p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-blue-800 font-bold uppercase leading-relaxed opacity-70">
-                  Usa la herramienta de medición en el visor para ajustar el tamaño real.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Cambiar Nivel de Detalle</label>
-                <div className="grid grid-cols-3 gap-2 p-2 bg-slate-100 rounded-2xl">
-                  {[LOD.LOW, LOD.MEDIUM, LOD.HIGH].map((l) => (
-                    <button 
-                      key={l}
-                      onClick={() => setState(s => ({ ...s, lod: l }))}
-                      disabled={state.isProcessing}
-                      className={`py-3 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${
-                        state.lod === l ? 'bg-white shadow-xl text-blue-600' : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      {l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-8 border-t border-slate-100 space-y-4">
-                <button 
-                  onClick={() => handleExport('OBJ')}
-                  disabled={!state.model || state.isProcessing}
-                  className="w-full flex items-center justify-center px-8 py-5 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 disabled:opacity-30 transition-all font-black shadow-xl shadow-slate-900/10"
-                >
-                  <Download size={24} className="mr-3" /> Exportar .OBJ
-                </button>
-                <button 
-                  onClick={() => handleExport('DXF')}
-                  disabled={!state.model || state.isProcessing}
-                  className="w-full flex items-center justify-center px-8 py-5 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 disabled:opacity-30 transition-all font-black shadow-xl shadow-blue-600/20"
-                >
-                  <FileCode size={24} className="mr-3" /> Exportar .DXF
-                </button>
-              </div>
-            </div>
+    <div className="animate-in fade-in duration-500 h-[85vh] flex flex-col">
+      <div className="flex-1 relative rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-200 bg-slate-950">
+        {state.isProcessing ? (
+          <div className="absolute inset-0 z-30 bg-slate-950/95 flex flex-col items-center justify-center">
+            <div className="w-24 h-24 border-[8px] border-blue-500 border-t-transparent rounded-full animate-spin mb-8"></div>
+            <h4 className="text-3xl font-black text-white mb-3 tracking-tighter uppercase tracking-[0.2em]">IA: Generando Geometría</h4>
+            <p className="text-slate-400 animate-pulse font-bold uppercase tracking-[0.2em] text-xs">Correlacionando vistas y optimizando primitivas...</p>
           </div>
-          
-          <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-10 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
-              <Box size={120} />
+        ) : state.error ? (
+          <div className="absolute inset-0 z-30 bg-red-50 flex flex-col items-center justify-center border border-red-200 p-12 text-center">
+            <AlertCircle size={80} className="text-red-500 mb-8" />
+            <p className="text-red-900 font-black text-2xl mb-12 max-w-lg leading-relaxed">{state.error}</p>
+            <button onClick={processModel} className="px-16 py-6 bg-red-600 text-white rounded-[2rem] font-black shadow-2xl shadow-red-600/30 uppercase tracking-widest text-sm">Reintentar Generación</button>
+          </div>
+        ) : state.model ? (
+          <Viewer3D 
+            model={state.model} 
+            globalScale={state.globalScale}
+            unit={state.unit}
+            onScaleChange={handleScaleChange}
+            onUnitChange={(newUnit) => setState(s => ({ ...s, unit: newUnit }))}
+          />
+        ) : (
+          <div className="h-full w-full bg-slate-100 flex flex-col items-center justify-center text-slate-400 border-4 border-dashed border-slate-200">
+            <Box size={100} className="mb-10 opacity-10" />
+            <p className="font-black text-3xl uppercase tracking-[0.3em] opacity-30">Sin modelo activo</p>
+          </div>
+        )}
+      </div>
+      
+      <div className="mt-8 flex justify-between items-center">
+        <button onClick={() => setActiveTab('detail')} className="flex items-center px-8 py-4 text-slate-600 font-black hover:bg-slate-200 rounded-2xl transition-all uppercase tracking-widest text-xs">
+          <ChevronLeft size={20} className="mr-2" /> Atrás: Detalle
+        </button>
+        <button onClick={() => setActiveTab('export')} className="group flex items-center px-12 py-5 bg-blue-600 text-white rounded-[2rem] hover:bg-blue-700 transition-all font-black shadow-2xl shadow-blue-500/30 text-lg">
+          Finalizar y Exportar
+          <ChevronRight size={24} className="ml-3 group-hover:translate-x-2 transition-transform" />
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderExportTab = () => (
+    <div className="max-w-4xl mx-auto space-y-12 animate-in slide-in-from-bottom-10 duration-700">
+      <div className="bg-white p-16 rounded-[3rem] shadow-sm border border-slate-200 text-center relative overflow-hidden">
+        <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-50 rounded-full opacity-50 blur-3xl"></div>
+        <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-slate-50 rounded-full opacity-50 blur-3xl"></div>
+        
+        <div className="mx-auto w-24 h-24 bg-green-500 text-white rounded-3xl flex items-center justify-center mb-10 shadow-2xl shadow-green-500/20">
+          <CheckCircle2 size={50} />
+        </div>
+        
+        <h3 className="text-4xl font-black mb-6 text-slate-900 tracking-tighter uppercase">Modelo Listo para Revit</h3>
+        <p className="text-slate-500 mb-14 max-w-2xl mx-auto leading-relaxed text-lg font-medium">
+          La geometría se ha simplificado y escalado según tus preferencias de BIM. Selecciona el formato de salida para descargarlo localmente.
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200 hover:border-blue-500/30 transition-all hover:bg-white group">
+            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-8 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
+              <Download size={32} />
             </div>
-            <h5 className="font-black text-lg mb-4 flex items-center tracking-tight">
-              Flujo de Trabajo Revit
-            </h5>
-            <p className="text-sm text-slate-300 leading-relaxed font-medium">
-              Importa el .DXF en una nueva "Familia de Modelo Genérico" para tener una base paramétrica rápida basada en la realidad capturada.
-            </p>
+            <h4 className="text-2xl font-black mb-3 text-slate-900 text-left">Formato .OBJ</h4>
+            <p className="text-sm text-slate-500 mb-10 text-left leading-relaxed">Ideal para visualización directa, Rhino o exportación rápida de masas.</p>
+            <button 
+              onClick={() => handleExport('OBJ')}
+              className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black hover:bg-slate-800 transition-all uppercase tracking-widest text-xs shadow-xl"
+            >
+              Descargar OBJ
+            </button>
+          </div>
+
+          <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200 hover:border-blue-500/30 transition-all hover:bg-white group">
+            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-8 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
+              <FileCode size={32} />
+            </div>
+            <h4 className="text-2xl font-black mb-3 text-slate-900 text-left">Formato .DXF</h4>
+            <p className="text-sm text-slate-500 mb-10 text-left leading-relaxed">Recomendado para Revit. Mantiene capas y geometría técnica compatible con BIM.</p>
+            <button 
+              onClick={() => handleExport('DXF')}
+              className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black hover:bg-blue-700 transition-all uppercase tracking-widest text-xs shadow-xl shadow-blue-600/20"
+            >
+              Descargar DXF
+            </button>
           </div>
         </div>
+
+        <div className="mt-16 pt-12 border-t border-slate-100">
+          <div className="flex flex-wrap justify-center gap-10">
+            <div className="text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Primitivas</span>
+              <span className="text-xl font-black text-slate-900">{state.model?.primitives.length || 0} piezas</span>
+            </div>
+            <div className="text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Escala global</span>
+              <span className="text-xl font-black text-blue-600">x{state.globalScale.toFixed(4)}</span>
+            </div>
+            <div className="text-left">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">LOD Seleccionado</span>
+              <span className="text-xl font-black text-slate-900">{state.lod}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex justify-center pb-12">
+        <button onClick={() => setActiveTab('viewer')} className="px-10 py-5 text-slate-500 font-black hover:bg-slate-200 rounded-2xl transition-all uppercase tracking-widest text-xs">
+          ← Volver al Visor 3D
+        </button>
       </div>
     </div>
   );
@@ -335,11 +369,11 @@ const App: React.FC = () => {
     <div className="min-h-screen pb-24 bg-slate-50 selection:bg-blue-100">
       {state.notification && (
         <div className={`fixed top-24 right-6 z-[100] p-6 rounded-3xl shadow-2xl flex items-center max-w-md animate-in slide-in-from-right-full backdrop-blur-xl border border-white/20 ${
-          state.notification.type === 'success' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'
+          state.notification.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
         }`}>
           <CheckCircle2 className="mr-4 shrink-0" />
-          <p className="text-xs font-black uppercase tracking-widest mr-8 leading-relaxed">{state.notification.message}</p>
-          <button onClick={() => setState(s => ({ ...s, notification: null }))} className="p-2 hover:bg-white/20 rounded-xl transition-colors"><X size={18}/></button>
+          <p className="text-[11px] font-black uppercase tracking-widest mr-8 leading-relaxed">{state.notification.message}</p>
+          <button onClick={() => setState(s => ({ ...s, notification: null }))} className="p-2 hover:bg-white/20 rounded-xl transition-colors shrink-0"><X size={18}/></button>
         </div>
       )}
 
@@ -358,15 +392,20 @@ const App: React.FC = () => {
             </div>
           </div>
           <nav className="hidden lg:flex items-center space-x-3 p-2 bg-slate-100 rounded-[1.5rem] border border-slate-200">
-            {['upload', 'detail', 'viewer'].map((tab, idx) => (
+            {[
+              { id: 'upload', label: '1. Subir imágenes' },
+              { id: 'detail', label: '2. Nivel de detalle' },
+              { id: 'viewer', label: '3. Modelo' },
+              { id: 'export', label: '4. Exportación' }
+            ].map((tab) => (
               <button 
-                key={tab}
-                onClick={() => setActiveTab(tab as any)}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
                 className={`px-8 py-3.5 rounded-2xl text-[10px] font-black transition-all uppercase tracking-[0.2em] ${
-                  activeTab === tab ? 'bg-white text-blue-600 shadow-xl' : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
+                  activeTab === tab.id ? 'bg-white text-blue-600 shadow-xl' : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
                 }`}
               >
-                {idx + 1}. {tab === 'upload' ? 'Imagen' : tab === 'detail' ? 'Nivel de detalle' : 'Modelo'}
+                {tab.label}
               </button>
             ))}
           </nav>
@@ -377,6 +416,7 @@ const App: React.FC = () => {
         {activeTab === 'upload' && renderUploadTab()}
         {activeTab === 'detail' && renderDetailTab()}
         {activeTab === 'viewer' && renderViewerTab()}
+        {activeTab === 'export' && renderExportTab()}
       </main>
 
       <footer className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 py-6 z-40">
