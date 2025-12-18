@@ -26,8 +26,11 @@ export enum LOD {
 }
 
 export enum Unit {
+  MM = 'mm',
   CM = 'cm',
   M = 'm',
+  IN = 'in',
+  FT = 'ft',
 }
 
 export interface LODConfig {
@@ -40,7 +43,7 @@ export interface AppState {
   lodConfigs: Record<LOD, LODConfig>;
   unit: Unit;
   model: ModelData | null;
-  globalScale: number; // Factor multiplicador para calibración
+  globalScale: number;
   isProcessing: boolean;
   error: string | null;
   notification: { message: string; type: 'success' | 'error' | 'info' } | null;

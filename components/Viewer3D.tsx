@@ -1,53 +1,19 @@
 
-import React, { Suspense, useRef, useEffect, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stage, Grid, Bounds, useBounds, Html } from '@react-three/drei';
+import React, { Suspense, useRef, useEffect, useState, useMemo } from 'react';
+import { Canvas, ThreeElements } from '@react-three/fiber';
+import { OrbitControls, Stage, Grid, Bounds, useBounds, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import { Ruler } from 'lucide-react';
+import { Ruler, Crosshair, Check } from 'lucide-react';
 import { ModelData, PrimitiveType, Primitive, Unit } from '../types';
 
-// Fix for JSX intrinsic elements in React Three Fiber
-// This ensures that tags like <mesh>, <boxGeometry>, <group>, etc. are recognized by the TypeScript compiler.
+// Fix: Augment global JSX namespace to include React Three Fiber elements
 declare global {
   namespace JSX {
-    interface IntrinsicElements {
-      mesh: any;
-      boxGeometry: any;
-      cylinderGeometry: any;
-      coneGeometry: any;
-      sphereGeometry: any;
-      meshStandardMaterial: any;
-      ambientLight: any;
-      pointLight: any;
-      directionalLight: any;
-      group: any;
-      primitive: any;
-      color: any;
-      line: any;
-      bufferGeometry: any;
-      lineBasicMaterial: any;
-    }
+    interface IntrinsicElements extends ThreeElements {}
   }
-  // Support for environments using React 18+ style JSX mapping
   namespace React {
     namespace JSX {
-      interface IntrinsicElements {
-        mesh: any;
-        boxGeometry: any;
-        cylinderGeometry: any;
-        coneGeometry: any;
-        sphereGeometry: any;
-        meshStandardMaterial: any;
-        ambientLight: any;
-        pointLight: any;
-        directionalLight: any;
-        group: any;
-        primitive: any;
-        color: any;
-        line: any;
-        bufferGeometry: any;
-        lineBasicMaterial: any;
-      }
+      interface IntrinsicElements extends ThreeElements {}
     }
   }
 }
@@ -57,17 +23,14 @@ interface Viewer3DProps {
   globalScale: number;
   unit: Unit;
   onScaleChange: (newScale: number) => void;
+  onUnitChange: (newUnit: Unit) => void;
 }
 
 const PrimitiveMesh: React.FC<{ 
   primitive: Primitive; 
-  isSelected: boolean; 
-  onClick: () => void;
   globalScale: number;
-  unit: Unit;
-}> = ({ primitive, isSelected, onClick, globalScale, unit }) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-
+  onPointerDown: (point: THREE.Vector3) => void;
+}> = ({ primitive, globalScale, onPointerDown }) => {
   const getGeometry = () => {
     switch (primitive.type) {
       case PrimitiveType.BOX: return <boxGeometry args={[1, 1, 1]} />;
@@ -93,30 +56,19 @@ const PrimitiveMesh: React.FC<{
   return (
     <group position={scaledPosition} rotation={primitive.rotation}>
       <mesh
-        ref={meshRef}
         scale={scaledSize}
-        onClick={(e) => {
+        onPointerDown={(e) => {
           e.stopPropagation();
-          onClick();
+          onPointerDown(e.point);
         }}
       >
         {getGeometry()}
         <meshStandardMaterial 
           color={primitive.color || '#3b82f6'} 
-          metalness={isSelected ? 0.4 : 0.1} 
-          roughness={0.4}
-          emissive={isSelected ? primitive.color : '#000000'}
-          emissiveIntensity={isSelected ? 0.5 : 0}
+          metalness={0.1} 
+          roughness={0.6} 
         />
       </mesh>
-      
-      {isSelected && (
-        <Html distanceFactor={10} position={[0, scaledSize[1]/2 + 5, 0]}>
-          <div className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold whitespace-nowrap shadow-xl border border-white/20">
-            {scaledSize[0].toFixed(1)} x {scaledSize[1].toFixed(1)} x {scaledSize[2].toFixed(1)} {unit}
-          </div>
-        </Html>
-      )}
     </group>
   );
 };
@@ -131,55 +83,159 @@ const FitModel: React.FC<{ model: ModelData; globalScale: number }> = ({ model, 
   return null;
 };
 
-const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleChange }) => {
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [targetSize, setTargetSize] = useState<string>('');
-  const [selectedAxis, setSelectedAxis] = useState<0 | 1 | 2>(1); // Default Y axis (Height)
+const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleChange, onUnitChange }) => {
+  const [isMeasureMode, setIsMeasureMode] = useState(false);
+  const [points, setPoints] = useState<THREE.Vector3[]>([]);
+  const [userInputValue, setUserInputValue] = useState('');
 
-  const handleCalibrate = () => {
-    if (selectedIndex === null) return;
-    const val = parseFloat(targetSize);
-    if (isNaN(val) || val <= 0) return;
+  const currentDistance = useMemo(() => {
+    if (points.length < 2) return 0;
+    return points[0].distanceTo(points[1]);
+  }, [points]);
 
-    const primitive = model.primitives[selectedIndex];
-    const currentSizeOnAxis = primitive.scale[selectedAxis];
-    
-    // New Global Scale = Target Real Size / Original AI Relative Size
-    const newGlobalScale = val / currentSizeOnAxis;
-    onScaleChange(newGlobalScale);
-    setTargetSize('');
+  const handlePointSelect = (point: THREE.Vector3) => {
+    if (!isMeasureMode) return;
+    if (points.length >= 2) {
+      setPoints([point]);
+    } else {
+      setPoints([...points, point]);
+    }
   };
 
-  const selectedPrimitive = selectedIndex !== null ? model.primitives[selectedIndex] : null;
+  const applyCalibration = () => {
+    const targetVal = parseFloat(userInputValue);
+    if (isNaN(targetVal) || targetVal <= 0 || currentDistance === 0) return;
+    const rawDistance = currentDistance / globalScale;
+    const newScale = targetVal / rawDistance;
+    onScaleChange(newScale);
+    setPoints([]);
+    setUserInputValue('');
+    setIsMeasureMode(false);
+  };
 
   return (
-    <div className="canvas-container bg-slate-950 border border-slate-800 shadow-2xl relative h-full min-h-[600px] rounded-xl overflow-hidden flex flex-col">
-      <div className="flex-1 relative">
-        <Canvas shadows dpr={[1, 2]} camera={{ position: [150, 150, 150], fov: 45 }}>
-          <color attach="background" args={['#020617']} />
-          <ambientLight intensity={0.8} />
-          <pointLight position={[200, 200, 200]} intensity={1.5} />
-          <directionalLight position={[-100, 100, -100]} intensity={1} />
+    <div className="bg-slate-950 border border-slate-800 shadow-2xl relative w-full h-full rounded-[2.5rem] overflow-hidden flex flex-col">
+      <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none">
+        <div className="flex gap-2 pointer-events-auto">
+          <button
+            onClick={() => {
+              setIsMeasureMode(!isMeasureMode);
+              setPoints([]);
+            }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all shadow-lg ${
+              isMeasureMode 
+                ? 'bg-blue-600 text-white ring-4 ring-blue-500/30' 
+                : 'bg-slate-900 text-slate-300 hover:text-white border border-white/10'
+            }`}
+          >
+            <Ruler size={16} />
+            {isMeasureMode ? 'CANCELAR MEDICIÓN' : 'MEDIR PARA ESCALAR'}
+          </button>
 
+          {isMeasureMode && points.length > 0 && (
+             <div className="bg-slate-900/90 backdrop-blur-md px-4 py-2.5 rounded-xl border border-blue-500/50 flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
+                  {points.length === 1 ? 'SELECCIONA SEGUNDO PUNTO' : 'PUNTOS MARCADOS'}
+                </span>
+                <div className="flex gap-1">
+                  <div className={`w-2 h-2 rounded-full bg-blue-500 ${points.length >= 1 ? 'opacity-100' : 'opacity-20'}`}></div>
+                  <div className={`w-2 h-2 rounded-full bg-blue-500 ${points.length >= 2 ? 'opacity-100' : 'opacity-20'}`}></div>
+                </div>
+             </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 pointer-events-auto">
+          <select
+            value={unit}
+            onChange={(e) => onUnitChange(e.target.value as Unit)}
+            className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-white/10 outline-none focus:ring-2 ring-blue-500/50 shadow-lg cursor-pointer appearance-none"
+          >
+            <optgroup label="Métrico">
+              <option value={Unit.MM}>Millimetros (mm)</option>
+              <option value={Unit.CM}>Centimetros (cm)</option>
+              <option value={Unit.M}>Metros (m)</option>
+            </optgroup>
+            <optgroup label="Imperial">
+              <option value={Unit.IN}>Pulgadas (in)</option>
+              <option value={Unit.FT}>Pies (ft)</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+
+      {points.length === 2 && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-sm px-4 animate-in slide-in-from-bottom-8">
+          <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl text-white">
+            <h5 className="text-xs font-black uppercase tracking-[0.2em] text-blue-400 mb-4 flex items-center">
+              <Crosshair size={14} className="mr-2" /> Calibración Real
+            </h5>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest pb-3 border-b border-white/5">
+                <span>Distancia en visor:</span>
+                <span className="text-white bg-slate-800 px-2 py-1 rounded">{currentDistance.toFixed(2)} {unit}</span>
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">
+                  ¿Cuánto mide esta distancia en la realidad?
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      value={userInputValue}
+                      onChange={(e) => setUserInputValue(e.target.value)}
+                      placeholder="Ej: 120.5"
+                      autoFocus
+                      className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-4 text-lg font-black focus:ring-2 focus:ring-blue-600 outline-none"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 uppercase text-xs">{unit}</span>
+                  </div>
+                  <button onClick={applyCalibration} className="bg-blue-600 hover:bg-blue-500 text-white px-6 rounded-xl font-black transition-all active:scale-95 shadow-xl shadow-blue-900/20">
+                    <Check size={24} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 w-full h-full relative">
+        <Canvas shadows dpr={[1, 2]} camera={{ position: [150, 150, 150], fov: 45 }} style={{ width: '100%', height: '100%' }}>
+          <color attach="background" args={['#020617']} />
+          <ambientLight intensity={1.2} />
+          <pointLight position={[200, 200, 200]} intensity={2} />
+          <directionalLight position={[-100, 100, -100]} intensity={1.5} />
           <Suspense fallback={null}>
             <Bounds observe margin={1.5}>
-              <group onClick={() => setSelectedIndex(null)}>
-                <Stage intensity={0.5} environment={null} adjustCamera={false} center shadows="contact">
-                  {model.primitives.map((p, idx) => (
-                    <PrimitiveMesh 
-                      key={`${idx}-${model.generationTime}`} 
-                      primitive={p} 
-                      isSelected={selectedIndex === idx}
-                      onClick={() => setSelectedIndex(idx)}
-                      globalScale={globalScale}
-                      unit={unit}
-                    />
-                  ))}
-                </Stage>
-              </group>
-              <FitModel model={model} globalScale={globalScale} />
+              <Stage intensity={0.5} environment={null} adjustCamera={false} center shadows="contact">
+                {model.primitives.map((p, idx) => (
+                  <PrimitiveMesh 
+                    key={`${idx}-${model.generationTime}`} 
+                    primitive={p} 
+                    globalScale={globalScale}
+                    onPointerDown={handlePointSelect}
+                  />
+                ))}
+              </Stage>
+              {points.map((p, i) => (
+                <mesh key={i} position={p}>
+                  <sphereGeometry args={[globalScale * 0.5, 16, 16]} />
+                  <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={2} />
+                </mesh>
+              ))}
+              {points.length === 2 && (
+                <Line
+                  points={[points[0], points[1]]}
+                  color="#3b82f6"
+                  lineWidth={3}
+                  dashed
+                  dashSize={1}
+                  gapSize={0.5}
+                />
+              )}
             </Bounds>
-            
             <Grid
               infiniteGrid
               fadeDistance={1000}
@@ -191,71 +247,25 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
               position={[0, -0.1, 0]}
             />
           </Suspense>
-
-          <OrbitControls makeDefault enableDamping dampingFactor={0.05} />
+          <OrbitControls 
+            makeDefault 
+            enableDamping 
+            dampingFactor={0.05} 
+            enabled={!isMeasureMode || points.length < 1} 
+          />
         </Canvas>
+      </div>
 
-        {/* Overlay de Calibración */}
-        {selectedPrimitive && (
-          <div className="absolute top-4 left-4 z-10 w-64 bg-slate-900/90 backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-2xl text-white animate-in slide-in-from-left duration-300">
-            <h5 className="text-xs font-black uppercase tracking-widest text-blue-400 mb-4 flex items-center">
-              <Ruler size={14} className="mr-2" /> Calibrar Escala Real
-            </h5>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] text-slate-400 font-bold uppercase mb-2">Seleccionar Arista/Eje</label>
-                <div className="grid grid-cols-3 gap-1">
-                  {['Ancho (X)', 'Alto (Y)', 'Fondo (Z)'].map((label, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedAxis(i as any)}
-                      className={`py-1.5 text-[10px] font-bold rounded border transition-all ${
-                        selectedAxis === i ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-700'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-bold uppercase mb-2">
-                  Dimensión Real en {unit}
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    value={targetSize}
-                    onChange={(e) => setTargetSize(e.target.value)}
-                    placeholder="Ej: 150"
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-600 outline-none font-bold"
-                  />
-                  <button
-                    onClick={handleCalibrate}
-                    className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-black text-xs transition-all active:scale-95"
-                  >
-                    OK
-                  </button>
-                </div>
-              </div>
-
-              <p className="text-[9px] text-slate-500 italic leading-tight">
-                * Esto ajustará proporcionalmente todas las piezas del modelo Revit.
-              </p>
-            </div>
-          </div>
+      <div className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex gap-6 bg-slate-900/50 backdrop-blur-sm px-4 py-2 rounded-full border border-white/5">
+        {isMeasureMode ? (
+          <span className="text-blue-400">Haz clic en dos puntos del modelo para medir</span>
+        ) : (
+          <>
+            <span>🖱️ Orbitar</span>
+            <span>🖐️ Pan</span>
+            <span>🎡 Zoom</span>
+          </>
         )}
-
-        <div className="absolute top-4 right-4 flex flex-col gap-2 pointer-events-none">
-          <span className="bg-blue-600/90 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg backdrop-blur-sm">
-            {model.primitives.length} PRIMITIVAS
-          </span>
-          <span className="bg-slate-800/90 text-slate-300 text-[10px] font-bold px-2 py-1 rounded shadow-lg backdrop-blur-sm">
-            FACTOR ESCALA: {globalScale.toFixed(3)}
-          </span>
-        </div>
       </div>
     </div>
   );
