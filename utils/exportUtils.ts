@@ -2,31 +2,24 @@
 import { ModelData, PrimitiveType, Primitive } from '../types';
 
 /**
- * Converts a Hex color string to a 24-bit integer for DXF TrueColor (code 420).
- */
-function hexToTrueColor(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) || 0;
-  const g = parseInt(hex.slice(3, 5), 16) || 0;
-  const b = parseInt(hex.slice(5, 7), 16) || 0;
-  return (r << 16) | (g << 8) | b;
-}
-
-/**
- * Simple Hex to ACI (AutoCAD Color Index) for fallback.
+ * Maps Hex to standard AutoCAD Color Index (1-7)
  */
 function hexToACI(hex: string): number {
   const r = parseInt(hex.slice(1, 3), 16) || 0;
   const g = parseInt(hex.slice(3, 5), 16) || 0;
   const b = parseInt(hex.slice(5, 7), 16) || 0;
   
-  if (r > 200 && g < 100 && b < 100) return 1; // Red
-  if (g > 200 && r < 100 && b < 100) return 3; // Green
-  if (b > 200 && r < 100 && g < 100) return 5; // Blue
-  return 7; // White/Default
+  if (r > 180 && g < 100 && b < 100) return 1; // Red
+  if (r > 180 && g > 180 && b < 100) return 2; // Yellow
+  if (g > 180 && r < 100 && b < 100) return 3; // Green
+  if (g > 180 && b > 180 && r < 100) return 4; // Cyan
+  if (b > 180 && r < 100 && g < 100) return 5; // Blue
+  if (r > 180 && b > 180 && g < 100) return 6; // Magenta
+  return 7; // White/Black
 }
 
 /**
- * Applies transformation (scale, rotation, position) to a vertex.
+ * Applies 3D transformations to a vertex based on primitive properties
  */
 function transformVertex(v: number[], p: Primitive): [number, number, number] {
   const [px, py, pz] = p.position;
@@ -56,149 +49,144 @@ function transformVertex(v: number[], p: Primitive): [number, number, number] {
 }
 
 /**
- * Generates a 3DFACE entity string for DXF.
- * Uses code 420 for TrueColor support.
+ * Creates a DXF 3DFACE entity (R12 compatible)
  */
-function create3DFace(v1: number[], v2: number[], v3: number[], v4: number[], layer: string, trueColor: number): string {
-  return `0\n3DFACE\n8\n${layer}\n62\n7\n420\n${trueColor}\n` +
-         `10\n${v1[0]}\n20\n${v1[1]}\n30\n${v1[2]}\n` +
-         `11\n${v2[0]}\n21\n${v2[1]}\n31\n${v2[2]}\n` +
-         `12\n${v3[0]}\n22\n${v3[1]}\n32\n${v3[2]}\n` +
-         `13\n${v4[0]}\n23\n${v4[1]}\n33\n${v4[2]}\n`;
+function create3DFace(v1: number[], v2: number[], v3: number[], v4: number[] | undefined, layer: string, color: number): string {
+  // En DXF R12, para un triángulo, el punto 4 debe ser igual al punto 3
+  const p4 = v4 || v3;
+  return `0\n3DFACE\n8\n${layer}\n62\n${color}\n` +
+         `10\n${v1[0].toFixed(6)}\n20\n${v1[1].toFixed(6)}\n30\n${v1[2].toFixed(6)}\n` +
+         `11\n${v2[0].toFixed(6)}\n21\n${v2[1].toFixed(6)}\n31\n${v2[2].toFixed(6)}\n` +
+         `12\n${v3[0].toFixed(6)}\n22\n${v3[1].toFixed(6)}\n32\n${v3[2].toFixed(6)}\n` +
+         `13\n${p4[0].toFixed(6)}\n23\n${p4[1].toFixed(6)}\n33\n${p4[2].toFixed(6)}\n`;
 }
 
 /**
- * Generates an OBJ file string.
+ * Helper to generate geometry vertices and faces for each primitive type
  */
-export function exportToOBJ(model: ModelData): string {
-  let objContent = "# GeoImage Export\n";
-  let vertexOffset = 1;
+function getPrimitiveGeometry(p: Primitive) {
+  const vertices: [number, number, number][] = [];
+  const faces: number[][] = []; 
 
-  model.primitives.forEach((p, idx) => {
-    objContent += `g Primitive_${idx + 1}_${p.type}\n`;
-    
-    const verts = [
-        [-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5, 0.5,-0.5], [-0.5, 0.5,-0.5],
-        [-0.5,-0.5, 0.5], [0.5,-0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]
-    ].map(v => transformVertex(v, p));
+  switch (p.type) {
+    case PrimitiveType.BOX:
+      [
+        [-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5,0.5,-0.5], [-0.5,0.5,-0.5],
+        [-0.5,-0.5, 0.5], [0.5,-0.5, 0.5], [0.5,0.5, 0.5], [-0.5,0.5, 0.5]
+      ].forEach(v => vertices.push(transformVertex(v, p)));
+      faces.push([0,1,2,3], [4,7,6,5], [0,4,5,1], [1,5,6,2], [2,6,7,3], [3,7,4,0]);
+      break;
 
-    verts.forEach(v => {
-      objContent += `v ${v[0]} ${v[1]} ${v[2]}\n`;
-    });
-
-    const faces = [
-      [1, 2, 3, 4], [5, 8, 7, 6], [1, 5, 6, 2], 
-      [2, 6, 7, 3], [3, 7, 8, 4], [4, 8, 5, 1]
-    ];
-
-    faces.forEach(f => {
-      objContent += `f ${f[0] + vertexOffset - 1} ${f[1] + vertexOffset - 1} ${f[2] + vertexOffset - 1} ${f[3] + vertexOffset - 1}\n`;
-    });
-    
-    vertexOffset += 8;
-  });
-  return objContent;
-}
-
-/**
- * Generates a high-quality DXF file for BIM/AutoCAD.
- * Implements independent layers and TrueColor RGB matching.
- */
-export function exportToDXF(model: ModelData): string {
-  // DXF Header
-  let dxf = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n0\nENDSEC\n";
-  
-  // TABLES Section (Define Layers with Colors)
-  dxf += "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLTYPE\n70\n1\n0\nLTYPE\n2\nCONTINUOUS\n70\n0\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n0\nENDTAB\n";
-  dxf += "0\nTABLE\n2\nLAYER\n70\n" + model.primitives.length + "\n";
-  
-  model.primitives.forEach((p, idx) => {
-    const layerName = `GEO_PIEZA_${idx + 1}`;
-    const trueColor = hexToTrueColor(p.color);
-    dxf += `0\nLAYER\n2\n${layerName}\n70\n0\n62\n7\n420\n${trueColor}\n6\nCONTINUOUS\n`;
-  });
-  
-  dxf += "0\nENDTAB\n0\nENDSEC\n";
-
-  // ENTITIES Section
-  dxf += "0\nSECTION\n2\nENTITIES\n";
-
-  model.primitives.forEach((p, idx) => {
-    const layerName = `GEO_PIEZA_${idx + 1}`;
-    const trueColor = hexToTrueColor(p.color);
-
-    if (p.type === PrimitiveType.BOX) {
-      const v = [
-        [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5],
-        [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]
-      ].map(vert => transformVertex(vert, p));
-
-      dxf += create3DFace(v[0], v[1], v[2], v[3], layerName, trueColor);
-      dxf += create3DFace(v[4], v[7], v[6], v[5], layerName, trueColor);
-      dxf += create3DFace(v[0], v[4], v[5], v[1], layerName, trueColor);
-      dxf += create3DFace(v[1], v[5], v[6], v[2], layerName, trueColor);
-      dxf += create3DFace(v[2], v[6], v[7], v[3], layerName, trueColor);
-      dxf += create3DFace(v[3], v[7], v[4], v[0], layerName, trueColor);
-    } 
-    else if (p.type === PrimitiveType.PYRAMID) {
-      const v = [
-        [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5],
-        [0, 0, 0.5]
-      ].map(vert => transformVertex(vert, p));
-
-      dxf += create3DFace(v[0], v[1], v[2], v[3], layerName, trueColor);
-      dxf += create3DFace(v[0], v[1], v[4], v[4], layerName, trueColor);
-      dxf += create3DFace(v[1], v[2], v[4], v[4], layerName, trueColor);
-      dxf += create3DFace(v[2], v[3], v[4], v[4], layerName, trueColor);
-      dxf += create3DFace(v[3], v[0], v[4], v[4], layerName, trueColor);
-    }
-    else if (p.type === PrimitiveType.CYLINDER) {
+    case PrimitiveType.CYLINDER:
       const segments = 16;
-      const bottomCircle: number[][] = [];
-      const topCircle: number[][] = [];
-      
-      for(let i=0; i<segments; i++) {
-        const ang = (i / segments) * Math.PI * 2;
-        bottomCircle.push(transformVertex([0.5 * Math.cos(ang), 0.5 * Math.sin(ang), -0.5], p));
-        topCircle.push(transformVertex([0.5 * Math.cos(ang), 0.5 * Math.sin(ang), 0.5], p));
+      for (let i = 0; i < segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        vertices.push(transformVertex([0.5 * Math.cos(a), -0.5, 0.5 * Math.sin(a)], p));
       }
+      for (let i = 0; i < segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        vertices.push(transformVertex([0.5 * Math.cos(a), 0.5, 0.5 * Math.sin(a)], p));
+      }
+      const bC = vertices.length;
+      vertices.push(transformVertex([0, -0.5, 0], p));
+      const tC = vertices.length;
+      vertices.push(transformVertex([0, 0.5, 0], p));
 
-      for(let i=0; i<segments; i++) {
-        const next = (i + 1) % segments;
-        dxf += create3DFace(bottomCircle[i], bottomCircle[next], topCircle[next], topCircle[i], layerName, trueColor);
-        dxf += create3DFace(topCircle[i], topCircle[next], transformVertex([0,0,0.5], p), transformVertex([0,0,0.5], p), layerName, trueColor);
-        dxf += create3DFace(bottomCircle[i], bottomCircle[next], transformVertex([0,0,-0.5], p), transformVertex([0,0,-0.5], p), layerName, trueColor);
+      for (let i = 0; i < segments; i++) {
+        const n = (i + 1) % segments;
+        faces.push([i, n, n + segments, i + segments]); // Lado
+        faces.push([i, bC, n]); // Tapa inferior
+        faces.push([i + segments, n + segments, tC]); // Tapa superior
       }
-    }
-    else {
-      // SPHERE (Box simplified)
-      const v = [
-        [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5],
-        [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]
-      ].map(vert => transformVertex(vert, p));
-      dxf += create3DFace(v[0], v[1], v[2], v[3], layerName, trueColor);
-      dxf += create3DFace(v[4], v[7], v[6], v[5], layerName, trueColor);
-      dxf += create3DFace(v[0], v[4], v[5], v[1], layerName, trueColor);
-      dxf += create3DFace(v[1], v[5], v[6], v[2], layerName, trueColor);
-      dxf += create3DFace(v[2], v[6], v[7], v[3], layerName, trueColor);
-      dxf += create3DFace(v[3], v[7], v[4], v[0], layerName, trueColor);
-    }
+      break;
+
+    case PrimitiveType.PYRAMID:
+      [[-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5,-0.5,0.5], [-0.5,-0.5,0.5]].forEach(v => vertices.push(transformVertex(v, p)));
+      vertices.push(transformVertex([0, 0.5, 0], p));
+      faces.push([0,1,2,3]); // Base
+      faces.push([0,4,1]); faces.push([1,4,2]); faces.push([2,4,3]); faces.push([3,4,0]); // Caras
+      break;
+
+    case PrimitiveType.SPHERE:
+      const latR = 8; const lonR = 12;
+      for (let lat = 0; lat <= latR; lat++) {
+        const th = (lat * Math.PI) / latR;
+        const sTh = Math.sin(th); const cTh = Math.cos(th);
+        for (let lon = 0; lon <= lonR; lon++) {
+          const ph = (lon * 2 * Math.PI) / lonR;
+          vertices.push(transformVertex([0.5 * Math.cos(ph) * sTh, 0.5 * cTh, 0.5 * Math.sin(ph) * sTh], p));
+        }
+      }
+      for (let lat = 0; lat < latR; lat++) {
+        for (let lon = 0; lon < lonR; lon++) {
+          const f = lat * (lonR + 1) + lon;
+          const s = f + lonR + 1;
+          faces.push([f, s, s + 1, f + 1]);
+        }
+      }
+      break;
+    
+    default: // Fallback a box si el tipo no es reconocido
+      [[-0.5,-0.5,-0.5], [0.5,0.5,0.5]].forEach(v => vertices.push(transformVertex(v, p)));
+      break;
+  }
+  return { vertices, faces };
+}
+
+export function exportToOBJ(model: ModelData): string {
+  let obj = "# GeoImage Export - High Fidelity BIM Mesh\n";
+  let vOffset = 1;
+  model.primitives.forEach((p, i) => {
+    obj += `\ng Pieza_${i+1}_${p.type}\n`;
+    const { vertices, faces } = getPrimitiveGeometry(p);
+    vertices.forEach(v => obj += `v ${v[0].toFixed(6)} ${v[1].toFixed(6)} ${v[2].toFixed(6)}\n`);
+    faces.forEach(f => {
+      if (f.length === 3) obj += `f ${f[0] + vOffset} ${f[1] + vOffset} ${f[2] + vOffset}\n`;
+      else obj += `f ${f[0] + vOffset} ${f[1] + vOffset} ${f[2] + vOffset} ${f[3] + vOffset}\n`;
+    });
+    vOffset += vertices.length;
   });
+  return obj;
+}
 
+export function exportToDXF(model: ModelData): string {
+  // DXF R12 Header and Tables for Revit Compatibility
+  let dxf = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n" + 
+            "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n10\n";
+  
+  // Definición de capas básicas
+  model.primitives.forEach((_, idx) => {
+    dxf += `0\nLAYER\n2\nPIEZA_${idx + 1}\n70\n64\n62\n7\n6\nCONTINUOUS\n`;
+  });
+  
+  dxf += "0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n";
+  
+  model.primitives.forEach((p, idx) => {
+    const layer = `PIEZA_${idx + 1}`;
+    const color = hexToACI(p.color);
+    const { vertices, faces } = getPrimitiveGeometry(p);
+    
+    faces.forEach(f => {
+      const v1 = vertices[f[0]];
+      const v2 = vertices[f[1]];
+      const v3 = vertices[f[2]];
+      const v4 = f.length > 3 ? vertices[f[3]] : undefined;
+      dxf += create3DFace(v1, v2, v3, v4, layer, color);
+    });
+  });
+  
   dxf += "0\nENDSEC\n0\nEOF\n";
   return dxf;
 }
 
 export function downloadFile(content: string, fileName: string, contentType: string) {
-  const file = new Blob([content], { type: contentType });
+  const blob = new Blob([content], { type: contentType });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const url = URL.createObjectURL(file);
   a.href = url;
   a.download = fileName;
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-  }, 0);
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
