@@ -4,17 +4,15 @@ import {
   Upload, 
   Trash2, 
   ChevronRight, 
-  AlertCircle,
   BoxSelect,
   Layers,
   CheckCircle2,
   RefreshCw,
   Plus,
-  Beaker,
   ChevronLeft,
   Activity
 } from 'lucide-react';
-import { LOD, AppState, PrimitiveType, Unit, LODConfig, ModelData } from './types';
+import { LOD, AppState, Unit, LODConfig, ModelData } from './types';
 import { generate3DPrimitives } from './services/geminiService';
 import Viewer3D from './components/Viewer3D';
 import { exportToOBJ, exportToDXF, downloadFile } from './utils/exportUtils';
@@ -71,20 +69,6 @@ const App: React.FC = () => {
     });
   };
 
-  const loadTestModel = () => {
-    const testModel: ModelData = {
-      generationTime: Date.now(),
-      primitives: [
-        { type: PrimitiveType.BOX, position: [0, 0, 0], rotation: [0, 0, 0], scale: [40, 40, 40], color: '#3b82f6' },
-        { type: PrimitiveType.CYLINDER, position: [0, 40, 0], rotation: [0, 0, 0], scale: [20, 40, 20], color: '#10b981' },
-        { type: PrimitiveType.PYRAMID, position: [40, 0, 0], rotation: [0, 0, 1.57], scale: [30, 30, 30], color: '#f59e0b' },
-        { type: PrimitiveType.SPHERE, position: [-40, 0, 0], rotation: [0, 0, 0], scale: [25, 25, 25], color: '#ef4444' }
-      ]
-    };
-    setState(prev => ({ ...prev, model: testModel, globalScale: 1, notification: { message: "Entorno de demostración cargado.", type: 'info' } }));
-    setActiveTab('viewer');
-  };
-
   const processModel = async () => {
     if (state.images.length === 0) return;
     setState(prev => ({ ...prev, isProcessing: true, error: null }));
@@ -133,20 +117,16 @@ const App: React.FC = () => {
         <div className="mx-auto w-20 h-20 bg-slate-900 text-white rounded-3xl flex items-center justify-center mb-8 shadow-xl">
           <Upload size={36} />
         </div>
-        <h3 className="text-3xl font-black mb-3 text-slate-900 uppercase tracking-tight">Captura de Datos</h3>
+        <h3 className="text-3xl font-black mb-3 text-slate-900 uppercase tracking-tight">Subida de imágenes</h3>
         <p className="text-slate-500 mb-10 max-w-lg mx-auto leading-relaxed font-medium">
-          Suba fotos reales o planos técnicos. La IA reconstruirá la geometría en sólidos paramétricos para modelos BIM.
+          Suba fotos reales o planos técnicos. La IA reconstruirá la geometría en sólidos para modelos BIM.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <label className="group inline-flex items-center px-8 py-4 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all cursor-pointer shadow-lg shadow-blue-500/20">
+          <label className="group inline-flex items-center px-10 py-5 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all cursor-pointer shadow-lg shadow-blue-500/20">
             <Plus size={20} className="mr-3" />
-            Cargar Fotografías
+            Subir archivos
             <input type="file" className="hidden" multiple accept="image/*" onChange={handleImageUpload} />
           </label>
-          <button onClick={loadTestModel} className="flex items-center px-8 py-4 bg-slate-100 text-slate-600 font-black rounded-2xl hover:bg-slate-200 transition-all border border-slate-200">
-            <Beaker size={20} className="mr-3" />
-            Entorno Demo
-          </button>
         </div>
       </div>
       {state.images.length > 0 && (
