@@ -3,16 +3,20 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { LOD, ModelData, PrimitiveType, Unit, LODConfig } from "../types";
 
 const SYSTEM_INSTRUCTION = `
-You are a expert 3D architectural modeler specialized in BIM and Revit.
-Your task is to analyze one or more images of a complex geometric object and decompose it into a set of SIMPLE 3D primitives.
-The primitives you can use are: BOX, CYLINDER, PYRAMID (a 4-sided cone), and SPHERE.
+You are an expert 3D architectural modeler specialized in BIM and Revit.
+Your task is to analyze one or more images and decompose them into a set of SIMPLE 3D primitives (BOX, CYLINDER, PYRAMID, SPHERE).
 
-Rules:
-1. Represent the object using the EXACT number of primitives requested or fewer while maintaining the core shape.
+INPUT HANDLING:
+- You may receive photos of real objects OR technical drawings (floor plans, elevations, sections, side views).
+- Technical drawings often contain "noise": text, dimension lines (cotas), annotations, grid lines, and title blocks.
+- IGNORE ALL TEXT AND ANNOTATIONS. Focus solely on the geometric outlines and spatial relationships shown in the drawings.
+- If multiple views are provided (e.g., a plan and an elevation), correlate them to build a single coherent 3D object.
+
+MODELING RULES:
+1. Represent the object using the EXACT number of primitives requested (LOD) or fewer while maintaining the core shape.
 2. Provide precise relative positions (x, y, z), rotations (radians), and scales (relative units).
 3. The output MUST be a JSON object containing an array of primitives.
-4. If multiple images are provided, they represent different views of the SAME object.
-5. SCALE RULE: You will be given a 'Reference Length' which corresponds to the LARGEST dimension of the object in a specific unit (cm or m). Ensure all 'position' and 'scale' values in the output are calculated in that unit so the resulting model has correct real-world dimensions.
+4. SCALE RULE: Use the provided 'Reference Length' as the LARGEST dimension of the object. Calculate all 'position' and 'scale' values in the specified unit so the model has correct real-world dimensions for Revit.
 `;
 
 export async function generate3DPrimitives(
@@ -37,9 +41,10 @@ export async function generate3DPrimitives(
       parts: [
         ...imageParts,
         { 
-          text: `Analyze the attached image(s) and decompose the object into a 3D model. 
-          TARGET COMPLEXITY: Use a maximum of ${config.maxPrimitives} primitives for this ${lod} level representation.
-          SCALING: The LARGEST dimension (length, width or height) of this object is exactly ${referenceLength} ${unit}. 
+          text: `Analyze the attached image(s) - which might be technical drawings (plans/elevations) or photos - and reconstruct the object into a 3D model.
+          NOISE FILTERING: Ignore all texts, dimensions, and annotations.
+          TARGET COMPLEXITY: Use a maximum of ${config.maxPrimitives} primitives for this ${lod} level.
+          SCALING: The LARGEST dimension of this object is exactly ${referenceLength} ${unit}. 
           Please output all coordinates and scales in ${unit} accordingly.` 
         }
       ]
@@ -77,7 +82,7 @@ export async function generate3DPrimitives(
                 },
                 color: {
                   type: Type.STRING,
-                  description: "Hex color representing the material in the image."
+                  description: "Hex color representing the material or layer. For technical drawings, use standard CAD colors (grey/blue/black)."
                 }
               },
               required: ["type", "position", "rotation", "scale", "color"]
@@ -93,7 +98,6 @@ export async function generate3DPrimitives(
   if (!text) throw new Error("Empty response from AI");
   
   try {
-    // Sanitización robusta: eliminar posibles bloques de código markdown que la IA pueda colar
     const sanitizedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
     const data = JSON.parse(sanitizedText);
     

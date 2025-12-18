@@ -131,7 +131,7 @@ const App: React.FC = () => {
         </div>
         <h3 className="text-3xl font-black mb-4 text-slate-900 tracking-tight">Carga de Referencias</h3>
         <p className="text-slate-500 mb-10 max-w-lg mx-auto leading-relaxed font-medium">
-          Selecciona una o varias imágenes de tu objeto. Cuantos más ángulos proporciones, mejor será la descomposición geométrica.
+          Selecciona fotos o planos técnicos (plantas, alzados, secciones). La IA ignorará textos y anotaciones para centrarse en la geometría 3D.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <label className="group inline-flex items-center px-10 py-5 bg-slate-900 text-white font-black rounded-2xl hover:bg-slate-800 transition-all cursor-pointer shadow-xl hover:-translate-y-1">
@@ -233,7 +233,7 @@ const App: React.FC = () => {
             <div className="absolute inset-0 z-30 bg-slate-950/95 flex flex-col items-center justify-center rounded-[2.5rem] border border-white/10">
               <div className="w-16 h-16 border-[6px] border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
               <h4 className="text-2xl font-black text-white mb-2 tracking-tight uppercase tracking-[0.1em]">IA: Reconstruyendo Espacios</h4>
-              <p className="text-slate-400 animate-pulse font-bold">Generando geometría paramétrica simplificada...</p>
+              <p className="text-slate-400 animate-pulse font-bold">Interpretando planos y filtrando anotaciones...</p>
             </div>
           ) : state.error ? (
             <div className="absolute inset-0 z-30 bg-red-50 flex flex-col items-center justify-center rounded-[2.5rem] border border-red-200 p-12 text-center">

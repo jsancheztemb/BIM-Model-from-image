@@ -1,20 +1,16 @@
 
 import React, { Suspense, useRef, useEffect, useState, useMemo } from 'react';
-import { Canvas, ThreeElements } from '@react-three/fiber';
+import { Canvas, ThreeElements, useThree } from '@react-three/fiber';
 import { OrbitControls, Stage, Grid, Bounds, useBounds, Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import { Ruler, Crosshair, Check } from 'lucide-react';
+import { Ruler, Crosshair, Check, MousePointer2 } from 'lucide-react';
 import { ModelData, PrimitiveType, Primitive, Unit } from '../types';
 
-// Fix: Augment global JSX namespace to include React Three Fiber elements
+// Fix for JSX intrinsic elements errors in React Three Fiber
+// This ensures that tags like <mesh />, <boxGeometry />, <group />, etc., are correctly typed in the JSX namespace.
 declare global {
   namespace JSX {
     interface IntrinsicElements extends ThreeElements {}
-  }
-  namespace React {
-    namespace JSX {
-      interface IntrinsicElements extends ThreeElements {}
-    }
   }
 }
 
@@ -29,8 +25,13 @@ interface Viewer3DProps {
 const PrimitiveMesh: React.FC<{ 
   primitive: Primitive; 
   globalScale: number;
+  isMeasureMode: boolean;
+  isHovered: boolean;
   onPointerDown: (point: THREE.Vector3) => void;
-}> = ({ primitive, globalScale, onPointerDown }) => {
+  onPointerMove: (point: THREE.Vector3) => void;
+  onPointerOver: () => void;
+  onPointerOut: () => void;
+}> = ({ primitive, globalScale, isMeasureMode, isHovered, onPointerDown, onPointerMove, onPointerOver, onPointerOut }) => {
   const getGeometry = () => {
     switch (primitive.type) {
       case PrimitiveType.BOX: return <boxGeometry args={[1, 1, 1]} />;
@@ -58,15 +59,33 @@ const PrimitiveMesh: React.FC<{
       <mesh
         scale={scaledSize}
         onPointerDown={(e) => {
+          if (!isMeasureMode) return;
           e.stopPropagation();
           onPointerDown(e.point);
+        }}
+        onPointerMove={(e) => {
+          if (!isMeasureMode) return;
+          e.stopPropagation();
+          onPointerMove(e.point);
+        }}
+        onPointerOver={(e) => {
+          if (!isMeasureMode) return;
+          e.stopPropagation();
+          onPointerOver();
+          document.body.style.cursor = 'crosshair';
+        }}
+        onPointerOut={() => {
+          onPointerOut();
+          document.body.style.cursor = 'auto';
         }}
       >
         {getGeometry()}
         <meshStandardMaterial 
           color={primitive.color || '#3b82f6'} 
           metalness={0.1} 
-          roughness={0.6} 
+          roughness={0.6}
+          emissive={isHovered ? "#ffffff" : "#000000"}
+          emissiveIntensity={isHovered ? 0.2 : 0}
         />
       </mesh>
     </group>
@@ -86,6 +105,8 @@ const FitModel: React.FC<{ model: ModelData; globalScale: number }> = ({ model, 
 const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleChange, onUnitChange }) => {
   const [isMeasureMode, setIsMeasureMode] = useState(false);
   const [points, setPoints] = useState<THREE.Vector3[]>([]);
+  const [tempPoint, setTempPoint] = useState<THREE.Vector3 | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [userInputValue, setUserInputValue] = useState('');
 
   const currentDistance = useMemo(() => {
@@ -93,13 +114,16 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
     return points[0].distanceTo(points[1]);
   }, [points]);
 
+  const liveDistance = useMemo(() => {
+    if (points.length !== 1 || !tempPoint) return 0;
+    return points[0].distanceTo(tempPoint);
+  }, [points, tempPoint]);
+
   const handlePointSelect = (point: THREE.Vector3) => {
     if (!isMeasureMode) return;
-    if (points.length >= 2) {
-      setPoints([point]);
-    } else {
-      setPoints([...points, point]);
-    }
+    const newPoints = points.length >= 2 ? [point] : [...points, point];
+    setPoints(newPoints);
+    if (newPoints.length === 2) setTempPoint(null);
   };
 
   const applyCalibration = () => {
@@ -115,12 +139,14 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
 
   return (
     <div className="bg-slate-950 border border-slate-800 shadow-2xl relative w-full h-full rounded-[2.5rem] overflow-hidden flex flex-col">
+      {/* Barra de herramientas superior */}
       <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none">
         <div className="flex gap-2 pointer-events-auto">
           <button
             onClick={() => {
               setIsMeasureMode(!isMeasureMode);
               setPoints([]);
+              setTempPoint(null);
             }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all shadow-lg ${
               isMeasureMode 
@@ -132,14 +158,14 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
             {isMeasureMode ? 'CANCELAR MEDICIÓN' : 'MEDIR PARA ESCALAR'}
           </button>
 
-          {isMeasureMode && points.length > 0 && (
+          {isMeasureMode && (
              <div className="bg-slate-900/90 backdrop-blur-md px-4 py-2.5 rounded-xl border border-blue-500/50 flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
                 <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
-                  {points.length === 1 ? 'SELECCIONA SEGUNDO PUNTO' : 'PUNTOS MARCADOS'}
+                  {points.length === 0 ? 'PUNTO DE ORIGEN' : points.length === 1 ? 'PUNTO DE DESTINO' : 'CALIBRANDO'}
                 </span>
                 <div className="flex gap-1">
-                  <div className={`w-2 h-2 rounded-full bg-blue-500 ${points.length >= 1 ? 'opacity-100' : 'opacity-20'}`}></div>
-                  <div className={`w-2 h-2 rounded-full bg-blue-500 ${points.length >= 2 ? 'opacity-100' : 'opacity-20'}`}></div>
+                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${points.length >= 1 ? 'bg-blue-500 scale-125' : 'bg-slate-700'}`}></div>
+                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${points.length >= 2 ? 'bg-blue-500 scale-125' : 'bg-slate-700'}`}></div>
                 </div>
              </div>
           )}
@@ -164,30 +190,28 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
         </div>
       </div>
 
+      {/* Panel de calibración */}
       {points.length === 2 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-sm px-4 animate-in slide-in-from-bottom-8">
-          <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl text-white">
-            <h5 className="text-xs font-black uppercase tracking-[0.2em] text-blue-400 mb-4 flex items-center">
-              <Crosshair size={14} className="mr-2" /> Calibración Real
+          <div className="bg-slate-900/95 backdrop-blur-xl border border-blue-500/30 p-6 rounded-3xl shadow-2xl text-white">
+            <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 mb-4 flex items-center">
+              <Crosshair size={14} className="mr-2" /> Definir Medida Real
             </h5>
             <div className="space-y-4">
               <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest pb-3 border-b border-white/5">
-                <span>Distancia en visor:</span>
-                <span className="text-white bg-slate-800 px-2 py-1 rounded">{currentDistance.toFixed(2)} {unit}</span>
+                <span>En el visor:</span>
+                <span className="text-blue-400 font-black">{currentDistance.toFixed(2)} {unit}</span>
               </div>
               <div>
-                <label className="block text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">
-                  ¿Cuánto mide esta distancia en la realidad?
-                </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <input
                       type="number"
                       value={userInputValue}
                       onChange={(e) => setUserInputValue(e.target.value)}
-                      placeholder="Ej: 120.5"
+                      placeholder="Medida real..."
                       autoFocus
-                      className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-4 text-lg font-black focus:ring-2 focus:ring-blue-600 outline-none"
+                      className="w-full bg-slate-800/50 border border-white/10 rounded-xl px-4 py-4 text-lg font-black focus:ring-2 focus:ring-blue-600 outline-none placeholder:text-slate-600"
                     />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 uppercase text-xs">{unit}</span>
                   </div>
@@ -202,11 +226,18 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
       )}
 
       <div className="flex-1 w-full h-full relative">
-        <Canvas shadows dpr={[1, 2]} camera={{ position: [150, 150, 150], fov: 45 }} style={{ width: '100%', height: '100%' }}>
+        <Canvas 
+          shadows 
+          dpr={[1, 2]} 
+          camera={{ position: [150, 150, 150], fov: 45 }} 
+          style={{ width: '100%', height: '100%' }}
+          onPointerMissed={() => setTempPoint(null)}
+        >
           <color attach="background" args={['#020617']} />
           <ambientLight intensity={1.2} />
           <pointLight position={[200, 200, 200]} intensity={2} />
           <directionalLight position={[-100, 100, -100]} intensity={1.5} />
+          
           <Suspense fallback={null}>
             <Bounds observe margin={1.5}>
               <Stage intensity={0.5} environment={null} adjustCamera={false} center shadows="contact">
@@ -215,27 +246,68 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
                     key={`${idx}-${model.generationTime}`} 
                     primitive={p} 
                     globalScale={globalScale}
+                    isMeasureMode={isMeasureMode}
+                    isHovered={hoveredIdx === idx}
                     onPointerDown={handlePointSelect}
+                    onPointerMove={setTempPoint}
+                    onPointerOver={() => setHoveredIdx(idx)}
+                    onPointerOut={() => setHoveredIdx(null)}
                   />
                 ))}
               </Stage>
+
+              {/* Guía temporal del cursor */}
+              {isMeasureMode && tempPoint && points.length < 2 && (
+                <group>
+                  <mesh position={tempPoint}>
+                    <sphereGeometry args={[globalScale * 0.4, 16, 16]} />
+                    <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.5} transparent opacity={0.6} />
+                  </mesh>
+                  {points.length === 1 && (
+                    <group>
+                      <Line
+                        points={[points[0], tempPoint]}
+                        color="#3b82f6"
+                        lineWidth={2}
+                        dashed
+                        dashSize={0.5}
+                        gapSize={0.2}
+                      />
+                      <Html position={tempPoint.clone().lerp(points[0], 0.5)}>
+                        <div className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] font-black whitespace-nowrap shadow-xl border border-white/20 -translate-y-4">
+                          {liveDistance.toFixed(2)} {unit}
+                        </div>
+                      </Html>
+                    </group>
+                  )}
+                </group>
+              )}
+
+              {/* Puntos fijados */}
               {points.map((p, i) => (
                 <mesh key={i} position={p}>
-                  <sphereGeometry args={[globalScale * 0.5, 16, 16]} />
+                  <sphereGeometry args={[globalScale * 0.6, 24, 24]} />
                   <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={2} />
                 </mesh>
               ))}
+
+              {/* Línea final de medida */}
               {points.length === 2 && (
-                <Line
-                  points={[points[0], points[1]]}
-                  color="#3b82f6"
-                  lineWidth={3}
-                  dashed
-                  dashSize={1}
-                  gapSize={0.5}
-                />
+                <group>
+                  <Line
+                    points={[points[0], points[1]]}
+                    color="#3b82f6"
+                    lineWidth={4}
+                  />
+                  <Html position={points[0].clone().lerp(points[1], 0.5)}>
+                    <div className="bg-slate-900 text-blue-400 px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap shadow-2xl border border-blue-500/30 -translate-y-8 flex items-center gap-2">
+                      <Ruler size={12} /> {currentDistance.toFixed(2)} {unit}
+                    </div>
+                  </Html>
+                </group>
               )}
             </Bounds>
+
             <Grid
               infiniteGrid
               fadeDistance={1000}
@@ -247,6 +319,7 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
               position={[0, -0.1, 0]}
             />
           </Suspense>
+
           <OrbitControls 
             makeDefault 
             enableDamping 
@@ -258,7 +331,9 @@ const Viewer3D: React.FC<Viewer3DProps> = ({ model, globalScale, unit, onScaleCh
 
       <div className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] flex gap-6 bg-slate-900/50 backdrop-blur-sm px-4 py-2 rounded-full border border-white/5">
         {isMeasureMode ? (
-          <span className="text-blue-400">Haz clic en dos puntos del modelo para medir</span>
+          <span className="text-blue-400 flex items-center gap-2">
+            <MousePointer2 size={12} /> {points.length === 0 ? 'Indica el origen de la medida' : points.length === 1 ? 'Indica el final de la medida' : 'Calibración lista'}
+          </span>
         ) : (
           <>
             <span>🖱️ Orbitar</span>
