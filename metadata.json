@@ -1,0 +1,5 @@
+{
+  "name": "BIM Model from Image",
+  "description": "Transform complex geometric images into simplified 3D models composed of primitives like cubes, cylinders, and pyramids for BIM/Revit workflows.",
+  "requestFramePermissions": []
+}
