@@ -116,7 +116,7 @@ const App: React.FC = () => {
           scale: p.scale.map(v => v * state.globalScale) as [number, number, number]
         }))
       };
-      const fileName = `BIM_Family_${state.lod}_${Date.now()}.${format.toLowerCase()}`;
+      const fileName = `BIM_Object_${state.lod}_${Date.now()}.${format.toLowerCase()}`;
       const content = format === 'OBJ' ? exportToOBJ(scaledModel) : exportToDXF(scaledModel);
       downloadFile(content, fileName, format === 'OBJ' ? "text/plain" : "application/dxf");
       setState(s => ({ ...s, notification: { message: `Archivo ${format} generado correctamente.`, type: 'success' } }));
@@ -135,7 +135,7 @@ const App: React.FC = () => {
         </div>
         <h3 className="text-3xl font-black mb-3 text-slate-900 uppercase tracking-tight">Captura de Datos</h3>
         <p className="text-slate-500 mb-10 max-w-lg mx-auto leading-relaxed font-medium">
-          Suba fotos reales o planos técnicos. La IA reconstruirá la geometría en sólidos paramétricos para familias de Revit.
+          Suba fotos reales o planos técnicos. La IA reconstruirá la geometría en sólidos paramétricos para modelos BIM.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <label className="group inline-flex items-center px-8 py-4 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-700 transition-all cursor-pointer shadow-lg shadow-blue-500/20">
@@ -181,7 +181,7 @@ const App: React.FC = () => {
               <Layers size={28} className="mr-4 text-blue-600" />
               Niveles de Detalle (LOD)
             </h3>
-            <p className="text-slate-500 mt-1 font-medium italic">Configure la densidad geométrica para optimizar el rendimiento en Revit.</p>
+            <p className="text-slate-500 mt-1 font-medium italic">Configure la densidad geométrica para optimizar el rendimiento en software BIM.</p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -213,7 +213,7 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between px-1">
                    <div className="flex items-center text-blue-600 gap-2">
                      <Activity size={14} />
-                     <span className="text-[10px] font-black uppercase tracking-tight">Carga Revit:</span>
+                     <span className="text-[10px] font-black uppercase tracking-tight">Carga BIM:</span>
                    </div>
                    <span className="text-[10px] font-black text-slate-900">~{getEstimatedFaces(state.lodConfigs[level.id].maxPrimitives)} CARAS</span>
                 </div>
@@ -226,7 +226,7 @@ const App: React.FC = () => {
         <button onClick={() => setActiveTab('upload')} className="px-8 py-4 text-slate-600 font-black hover:bg-slate-100 rounded-xl transition-all uppercase tracking-widest text-[10px]">← Atrás</button>
         <button onClick={processModel} className="flex items-center px-10 py-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl font-black">
           <RefreshCw size={20} className={`mr-3 ${state.isProcessing ? 'animate-spin' : ''}`} />
-          {state.isProcessing ? 'Calculando Primitivas...' : 'Reconstruir Modelo 3D'}
+          {state.isProcessing ? 'Calculando Primitivas...' : 'Generar modelo'}
         </button>
       </div>
     </div>
@@ -276,7 +276,7 @@ const App: React.FC = () => {
           <ChevronLeft size={16} className="mr-2" /> Volver a LOD
         </button>
         <button onClick={() => setActiveTab('export')} className="flex items-center px-12 py-5 bg-slate-900 text-white rounded-[2rem] hover:bg-blue-600 transition-all font-black shadow-xl shadow-slate-900/10 text-base">
-          Exportar para Revit / BIM
+          Exportar para software BIM
           <ChevronRight size={20} className="ml-3" />
         </button>
       </div>
@@ -290,15 +290,23 @@ const App: React.FC = () => {
           <CheckCircle2 size={40} />
         </div>
         <h3 className="text-4xl font-black mb-4 text-slate-900 tracking-tight uppercase">Modelo BIM Generado</h3>
-        <p className="text-slate-500 mb-12 font-medium">Su geometría está lista para ser insertada como familia en Revit o AutoCAD.</p>
+        <p className="text-slate-500 mb-12 font-medium">Su geometría está lista para ser insertada en software BIM o CAD.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200 hover:border-blue-500/50 transition-all group">
-            <h4 className="text-xl font-black mb-4 text-slate-900">Malla Técnica (OBJ)</h4>
-            <button onClick={() => handleExport('OBJ')} className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black shadow-lg">Descargar para Render</button>
+          <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200 hover:border-blue-500/50 transition-all group flex items-center justify-center">
+            <button 
+              onClick={() => handleExport('OBJ')} 
+              className="w-full py-6 bg-slate-900 text-white rounded-2xl font-black shadow-lg uppercase tracking-widest text-sm hover:bg-slate-800 transition-all"
+            >
+              Descargar OBJ
+            </button>
           </div>
-          <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200 hover:border-blue-500/50 transition-all group">
-            <h4 className="text-xl font-black mb-4 text-slate-900">Sólidos Revit (DXF)</h4>
-            <button onClick={() => handleExport('DXF')} className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-500/20">Exportar Familia (.dxf)</button>
+          <div className="bg-slate-50 p-10 rounded-[2.5rem] border border-slate-200 hover:border-blue-500/50 transition-all group flex items-center justify-center">
+            <button 
+              onClick={() => handleExport('DXF')} 
+              className="w-full py-6 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-500/20 uppercase tracking-widest text-sm hover:bg-blue-700 transition-all"
+            >
+              Descargar DXF
+            </button>
           </div>
         </div>
       </div>
@@ -319,8 +327,21 @@ const App: React.FC = () => {
             </div>
           </div>
           <nav className="hidden lg:flex items-center space-x-2 p-1.5 bg-slate-100 rounded-2xl">
-            {['CAPTURA', 'LOD', 'MODELO', 'EXPORTAR'].map((label, i) => (
-              <span key={i} className="px-6 py-2.5 text-[9px] font-black text-slate-500 uppercase tracking-widest">{label}</span>
+            {[
+              { id: 'upload', label: '1. IMAGEN' },
+              { id: 'detail', label: '2. NIVEL DE DETALLE' },
+              { id: 'viewer', label: '3. MODELO' },
+              { id: 'export', label: '4. EXPORTAR' }
+            ].map((tab, i) => (
+              <button
+                key={i}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-6 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all rounded-xl ${
+                  activeTab === tab.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {tab.label}
+              </button>
             ))}
           </nav>
         </div>
@@ -332,8 +353,8 @@ const App: React.FC = () => {
         {activeTab === 'export' && renderExportTab()}
       </main>
       <footer className="max-w-7xl mx-auto w-full px-8 py-10 flex items-center justify-between border-t border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-        <span>&copy; 2024 GeoImage AI - Workflow Revit Especializado</span>
-        <span>Desarrollado por <span className="text-slate-900">BIM AI Engineer</span></span>
+        <span>&copy; 2024 GeoImage AI - Workflow BIM Especializado</span>
+        <span>Desarrollado por <span className="text-slate-900 font-black">Javier Sánchez-Tembleque</span></span>
       </footer>
     </div>
   );

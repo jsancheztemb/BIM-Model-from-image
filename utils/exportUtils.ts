@@ -150,7 +150,7 @@ export function exportToOBJ(model: ModelData): string {
 }
 
 export function exportToDXF(model: ModelData): string {
-  // DXF R12 Header and Tables for Revit Compatibility
+  // DXF R12 Header and Tables for BIM Software Compatibility
   let dxf = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n" + 
             "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n10\n";
   

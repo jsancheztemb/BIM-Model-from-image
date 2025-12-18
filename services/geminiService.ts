@@ -3,12 +3,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { LOD, ModelData, PrimitiveType, Unit, LODConfig } from "../types";
 
 const SYSTEM_INSTRUCTION = `
-You are an expert 3D architectural modeler specialized in BIM and Revit.
+You are an expert 3D architectural modeler specialized in BIM and CAD software.
 Your task is to analyze one or more images and decompose them into a set of SIMPLE 3D primitives (BOX, CYLINDER, PYRAMID, SPHERE).
 
 INPUT HANDLING:
 - You may receive photos of real objects OR technical drawings (floor plans, elevations, sections, side views).
-- Technical drawings often contain "noise": text, dimension lines (cotas), annotations, grid lines, and title blocks.
+- Technical drawings often contain "noise": text, dimension lines, annotations, grid lines, and title blocks.
 - IGNORE ALL TEXT AND ANNOTATIONS. Focus solely on the geometric outlines and spatial relationships shown in the drawings.
 - If multiple views are provided (e.g., a plan and an elevation), correlate them to build a single coherent 3D object.
 
@@ -16,7 +16,7 @@ MODELING RULES:
 1. Represent the object using the EXACT number of primitives requested (LOD) or fewer while maintaining the core shape.
 2. Provide precise relative positions (x, y, z), rotations (radians), and scales (relative units).
 3. The output MUST be a JSON object containing an array of primitives.
-4. SCALE RULE: Use the provided 'Reference Length' as the LARGEST dimension of the object. Calculate all 'position' and 'scale' values in the specified unit so the model has correct real-world dimensions for Revit.
+4. SCALE RULE: Use the provided 'Reference Length' as the LARGEST dimension of the object. Calculate all 'position' and 'scale' values in the specified unit so the model has correct real-world dimensions for BIM software.
 `;
 
 export async function generate3DPrimitives(
